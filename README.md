@@ -1,70 +1,64 @@
-# Getting Started with Create React App
+# Culasi Public Market System
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Frontend foundation for the **Public Market Stall Rental and Monitoring System** described in `master_prompt.md`.
 
-## Available Scripts
+## Stack
 
-In the project directory, you can run:
+- React 19
+- Vite
+- TypeScript
+- Tailwind CSS
+- shadcn-style UI primitives
+- React Router
+- TanStack Query
+- React Hook Form + Zod
+- Chart.js
+- Supabase client scaffold
 
-### `npm start`
+## Current status
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+This repository now includes:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- a complete Vite migration from the original CRA scaffold
+- responsive admin and vendor portals
+- route protection for `super_admin`, `admin`, `finance`, and `vendor`
+- seeded dashboards with Chart.js analytics
+- module shells for applications, documents, stalls, leases, billing, payments, violations, reports, notifications, staff, and settings
+- typed auth, registration, password reset, and stall application forms
+- `.env.example` and a Supabase client entry point
 
-### `npm test`
+## Run locally
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+npm install
+npm run dev
+```
 
-### `npm run build`
+Build for production:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```bash
+npm run build
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Demo accounts
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- `superadmin@culasi.gov.ph` / `culasi123`
+- `admin@culasi.gov.ph` / `culasi123`
+- `finance@culasi.gov.ph` / `culasi123`
+- `vendor@culasi.gov.ph` / `culasi123`
 
-### `npm run eject`
+## Environment variables
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+Copy values from `.env.example`:
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```env
+VITE_APP_NAME="Culasi Public Market System"
+VITE_SUPABASE_URL="https://your-project.supabase.co"
+VITE_SUPABASE_ANON_KEY="your-anon-key"
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Project notes
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- Architecture notes and route map: `docs/architecture.md`
+- The current implementation uses seeded data for fast iteration.
+- Supabase auth, storage, SQL schema, and RLS are the next integration step.

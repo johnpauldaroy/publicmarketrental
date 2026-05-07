@@ -1,0 +1,1768 @@
+import type { ActivityItem, MetricCardData } from "@/types/domain";
+import { supabase } from "@/integrations/supabase/client";
+
+export interface AdminOption {
+  label: string;
+  value: string;
+}
+
+export interface SectionOption extends AdminOption {}
+
+export interface VendorRegistryRecord {
+  id: string;
+  profileId: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  businessType: string;
+  status: string;
+  assignedStall: string;
+  balance: number;
+  lastPayment: string;
+}
+
+export interface AdminApplicationRecord {
+  id: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendorName: string;
+  businessType: string;
+  preferredSection: string;
+  preferredStallType: string;
+  preferredStallId?: string;
+  preferredStallLabel: string;
+  status: string;
+  submittedAt: string;
+  updatedAt: string;
+  remarks: string;
+  rejectionReason: string;
+  documentsUploaded: number;
+  documentsVerified: number;
+}
+
+export interface AdminDocumentRecord {
+  id: string;
+  applicationId: string;
+  vendorProfileId: string;
+  vendorName: string;
+  document: string;
+  expiry: string;
+  status: string;
+  remarks: string;
+  uploadedAt: string;
+}
+
+export interface AdminStallRecord {
+  id: string;
+  sectionId: string;
+  section: string;
+  stall: string;
+  type: string;
+  rate: number;
+  status: string;
+  notes: string;
+}
+
+export interface AdminAssignmentRecord {
+  leaseId: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendor: string;
+  stallId: string;
+  stall: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  encodedBy: string;
+}
+
+export interface AdminLeaseRecord {
+  id: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendor: string;
+  stallId: string;
+  stall: string;
+  monthlyRate: number;
+  renewalStatus: string;
+  leaseEnd: string;
+  leaseEndIso: string;
+  status: string;
+}
+
+export interface AdminBillingRecord {
+  id: string;
+  leaseId: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendor: string;
+  stall: string;
+  billingMonth: string;
+  billingMonthIso: string;
+  amountDue: number;
+  dueDate: string;
+  dueDateIso: string;
+  amountPaid: number;
+  status: string;
+  penalties: number;
+  notes: string;
+}
+
+export interface AdminPaymentRecord {
+  id: string;
+  billingId: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendor: string;
+  amount: number;
+  paymentDate: string;
+  paymentDateIso: string;
+  method: string;
+  receipt: string;
+  recordedBy: string;
+  notes: string;
+}
+
+export interface AdminViolationRecord {
+  id: string;
+  vendorId: string;
+  vendorProfileId: string;
+  vendor: string;
+  stallId?: string;
+  stall: string;
+  category: string;
+  description: string;
+  date: string;
+  dateIso: string;
+  penalty: number;
+  action: string;
+  status: string;
+}
+
+export interface AdminNotificationRecord {
+  id: string;
+  userId: string;
+  recipient: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  link: string;
+  createdAt: string;
+  createdAtIso: string;
+}
+
+export interface AdminStaffRecord {
+  id: string;
+  profileId: string;
+  name: string;
+  role: string;
+  email: string;
+  positionTitle: string;
+  isActive: boolean;
+}
+
+export interface AdminDocumentRequirementRecord {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  isRequired: boolean;
+  hasExpiry: boolean;
+  sortOrder: number;
+}
+
+export interface AdminSettingsSnapshot {
+  documentRequirements: AdminDocumentRequirementRecord[];
+  billingSettings: {
+    billingDay: number;
+    penaltyAmount: number;
+    reminderDaysBefore: number;
+  };
+  notificationTemplates: {
+    approval: string;
+    rejection: string;
+    overdue: string;
+  };
+}
+
+export interface AdminDashboardSnapshot {
+  metrics: MetricCardData[];
+  activities: ActivityItem[];
+  applicationQueue: Array<Record<string, string>>;
+  applicationStatusBreakdown: Array<{ label: string; value: number; color: string }>;
+  documentStatusBreakdown: Array<{ label: string; value: number; color: string }>;
+  monthlyCollections: Array<{ month: string; collected: number; target: number }>;
+  occupancyBySection: Array<{ section: string; occupied: number; available: number }>;
+}
+
+export interface AdminReportsSnapshot {
+  summary: Array<{ label: string; value: string; note: string }>;
+  rows: Array<Record<string, string>>;
+}
+
+export interface ReportFiltersInput {
+  dateFrom: string;
+  dateTo: string;
+  section: string;
+  paymentStatus: string;
+}
+
+function requireSupabase() {
+  if (!supabase) {
+    throw new Error("Supabase client is not configured.");
+  }
+
+  return supabase;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function monthKey(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(value));
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function titleizeStatus(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function logActivity(
+  actorId: string,
+  action: string,
+  entityName: string,
+  entityId: string,
+  metadata: Record<string, unknown> = {},
+) {
+  const db = requireSupabase();
+  await db.from("activity_logs").insert({
+    actor_id: actorId,
+    action,
+    entity_name: entityName,
+    entity_id: entityId,
+    metadata,
+  });
+}
+
+async function notifyUser(userId: string, title: string, message: string, type: string, link = "") {
+  const db = requireSupabase();
+  const { error } = await db.from("notifications").insert({
+    user_id: userId,
+    title,
+    message,
+    type,
+    link,
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function loadCoreMaps() {
+  const db = requireSupabase();
+  const [profilesResult, vendorsResult, sectionsResult, stallsResult] = await Promise.all([
+    db.from("profiles").select("id, full_name, email, phone, role"),
+    db.from("vendors").select("id, profile_id, business_name, business_type, status"),
+    db.from("market_sections").select("id, name, code").order("sort_order", { ascending: true }),
+    db.from("stalls").select("id, section_id, stall_number, stall_type, monthly_rate, status, notes"),
+  ]);
+
+  if (profilesResult.error) throw profilesResult.error;
+  if (vendorsResult.error) throw vendorsResult.error;
+  if (sectionsResult.error) throw sectionsResult.error;
+  if (stallsResult.error) throw stallsResult.error;
+
+  const profiles = profilesResult.data ?? [];
+  const vendors = vendorsResult.data ?? [];
+  const sections = sectionsResult.data ?? [];
+  const stalls = stallsResult.data ?? [];
+
+  const profileById = new Map(profiles.map((item) => [item.id, item]));
+  const vendorById = new Map(vendors.map((item) => [item.id, item]));
+  const vendorByProfileId = new Map(vendors.map((item) => [item.profile_id, item]));
+  const sectionById = new Map(sections.map((item) => [item.id, item]));
+  const stallById = new Map(
+    stalls.map((item) => [
+      item.id,
+      {
+        ...item,
+        label: `${sectionById.get(item.section_id)?.name ?? "Section"} ${item.stall_number}`,
+      },
+    ]),
+  );
+
+  return { profiles, vendors, sections, stalls, profileById, vendorById, vendorByProfileId, sectionById, stallById };
+}
+
+export async function fetchAdminDashboardSnapshot(): Promise<AdminDashboardSnapshot> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const [applicationsResult, documentsResult, leasesResult, billingsResult, paymentsResult, activitiesResult] =
+    await Promise.all([
+      db.from("applications").select("id, vendor_id, preferred_stall_id, status, updated_at, application_type"),
+      db.from("application_documents").select("id, application_id, verification_status"),
+      db.from("leases").select("id, vendor_id, stall_id, status"),
+      db.from("billings").select("id, amount_due, amount_paid, status, due_date"),
+      db.from("payments").select("id, amount, payment_date"),
+      db.from("activity_logs").select("id, action, entity_name, entity_id, metadata, created_at").order("created_at", { ascending: false }).limit(5),
+    ]);
+
+  if (applicationsResult.error) throw applicationsResult.error;
+  if (documentsResult.error) throw documentsResult.error;
+  if (leasesResult.error) throw leasesResult.error;
+  if (billingsResult.error) throw billingsResult.error;
+  if (paymentsResult.error) throw paymentsResult.error;
+  if (activitiesResult.error) throw activitiesResult.error;
+
+  const applications = applicationsResult.data ?? [];
+  const documents = documentsResult.data ?? [];
+  const leases = leasesResult.data ?? [];
+  const billings = billingsResult.data ?? [];
+  const payments = paymentsResult.data ?? [];
+  const activities = activitiesResult.data ?? [];
+
+  const docsByApplication = new Map<string, { total: number; verified: number }>();
+  for (const doc of documents) {
+    const current = docsByApplication.get(doc.application_id) ?? { total: 0, verified: 0 };
+    current.total += 1;
+    if (doc.verification_status === "verified") {
+      current.verified += 1;
+    }
+    docsByApplication.set(doc.application_id, current);
+  }
+
+  const applicationQueue = applications.slice(0, 6).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    const preferredStall = item.preferred_stall_id ? core.stallById.get(item.preferred_stall_id) : null;
+    const docs = docsByApplication.get(item.id) ?? { total: 0, verified: 0 };
+
+    return {
+      applicant: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      type: item.application_type === "walk_in" ? "Walk-in" : "Online",
+      preferred_stall: preferredStall?.label ?? "Pending preference",
+      documents: `${docs.verified} / ${docs.total || 0} verified`,
+      status: titleizeStatus(item.status),
+      updated: formatDateTime(item.updated_at),
+    };
+  });
+
+  const applicationStatusMap = new Map<string, number>();
+  for (const item of applications) {
+    applicationStatusMap.set(item.status, (applicationStatusMap.get(item.status) ?? 0) + 1);
+  }
+
+  const documentStatusMap = new Map<string, number>();
+  for (const item of documents) {
+    documentStatusMap.set(item.verification_status, (documentStatusMap.get(item.verification_status) ?? 0) + 1);
+  }
+
+  const occupancyMap = new Map<string, { occupied: number; available: number }>();
+  for (const stall of core.stalls) {
+    const section = core.sectionById.get(stall.section_id)?.name ?? "Unassigned";
+    const current = occupancyMap.get(section) ?? { occupied: 0, available: 0 };
+    if (stall.status === "occupied" || stall.status === "reserved") {
+      current.occupied += 1;
+    } else {
+      current.available += 1;
+    }
+    occupancyMap.set(section, current);
+  }
+
+  const collectionsByMonth = new Map<string, number>();
+  for (const payment of payments) {
+    const key = monthKey(payment.payment_date);
+    collectionsByMonth.set(key, (collectionsByMonth.get(key) ?? 0) + Number(payment.amount ?? 0));
+  }
+
+  const overdueCount = billings.filter((item) => item.status === "overdue").length;
+  const outstanding = billings.reduce(
+    (sum, item) => sum + Math.max(Number(item.amount_due ?? 0) - Number(item.amount_paid ?? 0), 0),
+    0,
+  );
+
+  return {
+    metrics: [
+      {
+        label: "Total stalls",
+        value: `${core.stalls.length}`,
+        delta: `${leases.filter((item) => item.status === "active").length} active lease records`,
+      },
+      {
+        label: "Occupied stalls",
+        value: `${core.stalls.filter((item) => item.status === "occupied").length}`,
+        delta: `${core.stalls.filter((item) => item.status === "available").length} available`,
+        tone: "positive",
+      },
+      {
+        label: "Pending applications",
+        value: `${applications.filter((item) => item.status === "submitted" || item.status === "under_review").length}`,
+        delta: `${applications.filter((item) => item.status === "needs_resubmission").length} need resubmission`,
+        tone: "warning",
+      },
+      {
+        label: "Outstanding balance",
+        value: formatCurrency(outstanding),
+        delta: `${overdueCount} overdue accounts`,
+        tone: overdueCount > 0 ? "warning" : "neutral",
+      },
+    ],
+    activities: activities.map((item) => ({
+      id: item.id,
+      title: `${titleizeStatus(item.action)} ${item.entity_name}`,
+      detail: JSON.stringify(item.metadata ?? {}).replace(/[{}"]/g, "") || "Back-office activity recorded.",
+      timestamp: formatDateTime(item.created_at),
+      status: titleizeStatus(item.action),
+    })),
+    applicationQueue,
+    applicationStatusBreakdown: [
+      { label: "Draft", value: applicationStatusMap.get("draft") ?? 0, color: "#CBD5E1" },
+      { label: "Under Review", value: applicationStatusMap.get("under_review") ?? 0, color: "#F59E0B" },
+      { label: "Approved", value: applicationStatusMap.get("approved") ?? 0, color: "#0F766E" },
+      { label: "Needs Resubmission", value: applicationStatusMap.get("needs_resubmission") ?? 0, color: "#DC2626" },
+      { label: "Assigned", value: applicationStatusMap.get("assigned") ?? 0, color: "#2563EB" },
+    ],
+    documentStatusBreakdown: [
+      { label: "Verified", value: documentStatusMap.get("verified") ?? 0, color: "#15803D" },
+      { label: "Pending", value: documentStatusMap.get("pending") ?? 0, color: "#D97706" },
+      { label: "Needs Resubmission", value: documentStatusMap.get("needs_resubmission") ?? 0, color: "#B91C1C" },
+    ],
+    monthlyCollections: Array.from(collectionsByMonth.entries()).map(([month, collected]) => ({
+      month,
+      collected,
+      target: collected,
+    })),
+    occupancyBySection: Array.from(occupancyMap.entries()).map(([section, values]) => ({
+      section,
+      occupied: values.occupied,
+      available: values.available,
+    })),
+  };
+}
+
+export async function fetchSectionOptions(): Promise<SectionOption[]> {
+  const { sections } = await loadCoreMaps();
+  return sections.map((item) => ({ label: item.name, value: item.id }));
+}
+
+export async function fetchVendorOptions(): Promise<AdminOption[]> {
+  const core = await loadCoreMaps();
+  return core.vendors.map((item) => ({
+    label: core.profileById.get(item.profile_id)?.full_name ?? item.business_name,
+    value: item.id,
+  }));
+}
+
+export async function fetchUserOptions(): Promise<AdminOption[]> {
+  const core = await loadCoreMaps();
+  return core.profiles.map((item) => ({
+    label: `${item.full_name} (${item.email})`,
+    value: item.id,
+  }));
+}
+
+export async function fetchStallOptions(status?: string[]): Promise<AdminOption[]> {
+  const core = await loadCoreMaps();
+  return core.stalls
+    .filter((item) => !status || status.includes(item.status))
+    .map((item) => ({
+      label: core.stallById.get(item.id)?.label ?? item.stall_number,
+      value: item.id,
+    }));
+}
+
+export async function fetchLeaseOptions(): Promise<AdminOption[]> {
+  const leases = await fetchAssignments();
+  return leases.map((item) => ({
+    label: `${item.vendor} - ${item.stall}`,
+    value: item.leaseId,
+  }));
+}
+
+export async function fetchVendorRegistry(): Promise<{
+  summary: [string, string][];
+  rows: VendorRegistryRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const [leasesResult, billingsResult, paymentsResult] = await Promise.all([
+    db.from("leases").select("id, vendor_id, stall_id, status, end_date"),
+    db.from("billings").select("id, lease_id, amount_due, amount_paid"),
+    db.from("payments").select("id, vendor_id, payment_date").order("payment_date", { ascending: false }),
+  ]);
+
+  if (leasesResult.error) throw leasesResult.error;
+  if (billingsResult.error) throw billingsResult.error;
+  if (paymentsResult.error) throw paymentsResult.error;
+
+  const leases = leasesResult.data ?? [];
+  const billings = billingsResult.data ?? [];
+  const payments = paymentsResult.data ?? [];
+  const activeLeaseByVendor = new Map<string, (typeof leases)[number]>();
+
+  for (const lease of leases) {
+    if (lease.status !== "active") {
+      continue;
+    }
+
+    activeLeaseByVendor.set(lease.vendor_id, lease);
+  }
+
+  const balanceByVendor = new Map<string, number>();
+  for (const billing of billings) {
+    const lease = leases.find((item) => item.id === billing.lease_id);
+    if (!lease) continue;
+    balanceByVendor.set(
+      lease.vendor_id,
+      (balanceByVendor.get(lease.vendor_id) ?? 0) +
+        Math.max(Number(billing.amount_due ?? 0) - Number(billing.amount_paid ?? 0), 0),
+    );
+  }
+
+  const lastPaymentByVendor = new Map<string, string>();
+  for (const payment of payments) {
+    if (!lastPaymentByVendor.has(payment.vendor_id)) {
+      lastPaymentByVendor.set(payment.vendor_id, formatDate(payment.payment_date));
+    }
+  }
+
+  const rows = core.vendors.map((vendor) => {
+    const profile = core.profileById.get(vendor.profile_id);
+    const lease = activeLeaseByVendor.get(vendor.id);
+
+    return {
+      id: vendor.id,
+      profileId: vendor.profile_id,
+      fullName: profile?.full_name ?? vendor.business_name,
+      email: profile?.email ?? "-",
+      phone: profile?.phone ?? "-",
+      businessName: vendor.business_name,
+      businessType: vendor.business_type ?? "-",
+      status: titleizeStatus(vendor.status),
+      assignedStall: lease?.stall_id ? core.stallById.get(lease.stall_id)?.label ?? "-" : "-",
+      balance: balanceByVendor.get(vendor.id) ?? 0,
+      lastPayment: lastPaymentByVendor.get(vendor.id) ?? "-",
+    };
+  });
+
+  return {
+    summary: [
+      ["Active vendors", `${rows.filter((item) => item.status === "Active").length}`],
+      ["Finance holds", `${rows.filter((item) => item.balance > 0).length}`],
+      ["Renewals due", `${leases.filter((item) => item.status === "active").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function updateVendorRecord(
+  actorId: string,
+  input: {
+    profileId: string;
+    vendorId: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    businessName: string;
+    businessType: string;
+    status: string;
+  },
+) {
+  const db = requireSupabase();
+  const { error: profileError } = await db
+    .from("profiles")
+    .update({
+      full_name: input.fullName,
+      email: input.email,
+      phone: input.phone,
+    })
+    .eq("id", input.profileId);
+
+  if (profileError) throw profileError;
+
+  const { error: vendorError } = await db
+    .from("vendors")
+    .update({
+      business_name: input.businessName,
+      business_type: input.businessType,
+      status: input.status.toLowerCase().replace(/\s+/g, "_"),
+    })
+    .eq("id", input.vendorId);
+
+  if (vendorError) throw vendorError;
+
+  await logActivity(actorId, "updated", "vendor", input.vendorId, {
+    businessName: input.businessName,
+    status: input.status,
+  });
+}
+
+export async function fetchApplications(): Promise<{
+  summary: [string, string][];
+  rows: AdminApplicationRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const [applicationsResult, documentsResult] = await Promise.all([
+    db
+      .from("applications")
+      .select("id, vendor_id, preferred_stall_id, business_type, preferred_section, preferred_stall_type, status, submitted_at, updated_at, remarks, rejection_reason")
+      .order("updated_at", { ascending: false }),
+    db.from("application_documents").select("id, application_id, verification_status"),
+  ]);
+
+  if (applicationsResult.error) throw applicationsResult.error;
+  if (documentsResult.error) throw documentsResult.error;
+
+  const docsByApp = new Map<string, { uploaded: number; verified: number }>();
+  for (const doc of documentsResult.data ?? []) {
+    const current = docsByApp.get(doc.application_id) ?? { uploaded: 0, verified: 0 };
+    current.uploaded += 1;
+    if (doc.verification_status === "verified") {
+      current.verified += 1;
+    }
+    docsByApp.set(doc.application_id, current);
+  }
+
+  const rows = (applicationsResult.data ?? []).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    const preferredStall = item.preferred_stall_id ? core.stallById.get(item.preferred_stall_id) : null;
+    const docs = docsByApp.get(item.id) ?? { uploaded: 0, verified: 0 };
+
+    return {
+      id: item.id,
+      vendorId: item.vendor_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendorName: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      businessType: item.business_type ?? "-",
+      preferredSection: item.preferred_section ?? preferredStall?.label.split(" ")[0] ?? "-",
+      preferredStallType: item.preferred_stall_type ?? preferredStall?.stall_type ?? "-",
+      preferredStallId: item.preferred_stall_id ?? undefined,
+      preferredStallLabel: preferredStall?.label ?? "Pending assignment",
+      status: titleizeStatus(item.status),
+      submittedAt: formatDate(item.submitted_at),
+      updatedAt: formatDateTime(item.updated_at),
+      remarks: item.remarks ?? "",
+      rejectionReason: item.rejection_reason ?? "",
+      documentsUploaded: docs.uploaded,
+      documentsVerified: docs.verified,
+    };
+  });
+
+  return {
+    summary: [
+      ["Drafts", `${rows.filter((item) => item.status === "Draft").length}`],
+      ["Under review", `${rows.filter((item) => item.status === "Under Review" || item.status === "Submitted").length}`],
+      ["Needs resubmission", `${rows.filter((item) => item.status === "Needs Resubmission").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function createWalkInApplication(
+  actorId: string,
+  input: {
+    vendorId: string;
+    businessType: string;
+    preferredSection: string;
+    preferredStallType: string;
+    remarks: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data, error } = await db
+    .from("applications")
+    .insert({
+      vendor_id: input.vendorId,
+      application_type: "walk_in",
+      business_type: input.businessType,
+      preferred_section: input.preferredSection,
+      preferred_stall_type: input.preferredStallType,
+      remarks: input.remarks,
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+      reviewed_by: actorId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", input.vendorId)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Walk-in application received",
+    "Your stall application has been submitted by market staff.",
+    "submitted",
+    "/vendor/applications",
+  );
+
+  await logActivity(actorId, "created", "application", data.id, {
+    type: "walk_in",
+    vendorId: input.vendorId,
+  });
+}
+
+export async function updateApplicationReview(
+  actorId: string,
+  input: {
+    applicationId: string;
+    status: "under_review" | "approved" | "needs_resubmission" | "rejected";
+    remarks: string;
+    rejectionReason: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data: application, error: applicationError } = await db
+    .from("applications")
+    .select("id, vendor_id")
+    .eq("id", input.applicationId)
+    .single();
+
+  if (applicationError) throw applicationError;
+
+  const { error } = await db
+    .from("applications")
+    .update({
+      status: input.status,
+      reviewed_by: actorId,
+      reviewed_at: new Date().toISOString(),
+      remarks: input.remarks,
+      rejection_reason: input.rejectionReason || null,
+    })
+    .eq("id", input.applicationId);
+
+  if (error) throw error;
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", application.vendor_id)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Application updated",
+    `Your application status is now ${titleizeStatus(input.status)}.`,
+    input.status,
+    "/vendor/applications",
+  );
+
+  await logActivity(actorId, input.status, "application", input.applicationId, {
+    remarks: input.remarks,
+  });
+}
+
+export async function fetchDocumentQueue(): Promise<{
+  summary: [string, string][];
+  rows: AdminDocumentRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const [documentsResult, requirementsResult, applicationsResult] = await Promise.all([
+    db
+      .from("application_documents")
+      .select("id, application_id, requirement_id, verification_status, remarks, expiry_date, created_at")
+      .order("created_at", { ascending: false }),
+    db.from("document_requirements").select("id, name"),
+    db.from("applications").select("id, vendor_id"),
+  ]);
+
+  if (documentsResult.error) throw documentsResult.error;
+  if (requirementsResult.error) throw requirementsResult.error;
+  if (applicationsResult.error) throw applicationsResult.error;
+
+  const requirementById = new Map((requirementsResult.data ?? []).map((item) => [item.id, item.name]));
+  const applicationById = new Map((applicationsResult.data ?? []).map((item) => [item.id, item]));
+
+  const rows = (documentsResult.data ?? []).map((item) => {
+    const application = applicationById.get(item.application_id);
+    const vendor = application ? core.vendorById.get(application.vendor_id) : null;
+
+    return {
+      id: item.id,
+      applicationId: item.application_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendorName: vendor?.business_name ?? "Unknown vendor",
+      document: requirementById.get(item.requirement_id) ?? "Document",
+      expiry: formatDate(item.expiry_date),
+      status: titleizeStatus(item.verification_status),
+      remarks: item.remarks ?? "",
+      uploadedAt: formatDateTime(item.created_at),
+    };
+  });
+
+  return {
+    summary: [
+      ["Verified", `${rows.filter((item) => item.status === "Verified").length}`],
+      ["Pending", `${rows.filter((item) => item.status === "Pending").length}`],
+      ["Resubmission", `${rows.filter((item) => item.status === "Needs Resubmission").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function updateDocumentVerification(
+  actorId: string,
+  input: {
+    documentId: string;
+    status: "verified" | "needs_resubmission" | "rejected" | "pending";
+    remarks: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data: document, error: documentError } = await db
+    .from("application_documents")
+    .select("id, application_id")
+    .eq("id", input.documentId)
+    .single();
+
+  if (documentError) throw documentError;
+
+  const { error } = await db
+    .from("application_documents")
+    .update({
+      verification_status: input.status,
+      remarks: input.remarks,
+      verified_by: actorId,
+      verified_at: new Date().toISOString(),
+    })
+    .eq("id", input.documentId);
+
+  if (error) throw error;
+
+  const { data: application, error: applicationError } = await db
+    .from("applications")
+    .select("vendor_id")
+    .eq("id", document.application_id)
+    .single();
+
+  if (applicationError) throw applicationError;
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", application.vendor_id)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Document verification updated",
+    `Your uploaded document is now ${titleizeStatus(input.status)}.`,
+    input.status,
+    "/vendor/documents",
+  );
+
+  await logActivity(actorId, input.status, "application_document", input.documentId, {
+    remarks: input.remarks,
+  });
+}
+
+export async function fetchStalls(): Promise<{
+  summary: [string, string][];
+  rows: AdminStallRecord[];
+}> {
+  const core = await loadCoreMaps();
+  const rows = core.stalls.map((item) => ({
+    id: item.id,
+    sectionId: item.section_id,
+    section: core.sectionById.get(item.section_id)?.name ?? "Unassigned",
+    stall: `${core.sectionById.get(item.section_id)?.name ?? "Section"} ${item.stall_number}`,
+    type: item.stall_type,
+    rate: Number(item.monthly_rate ?? 0),
+    status: titleizeStatus(item.status),
+    notes: item.notes ?? "",
+  }));
+
+  return {
+    summary: [
+      ["Total stalls", `${rows.length}`],
+      ["Available", `${rows.filter((item) => item.status === "Available").length}`],
+      ["Maintenance", `${rows.filter((item) => item.status === "Under Maintenance").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function saveStall(
+  actorId: string,
+  input: {
+    stallId?: string;
+    sectionId: string;
+    stallNumber: string;
+    stallType: string;
+    monthlyRate: number;
+    status: string;
+    notes: string;
+  },
+) {
+  const db = requireSupabase();
+  const payload = {
+    section_id: input.sectionId,
+    stall_number: input.stallNumber,
+    stall_type: input.stallType,
+    monthly_rate: input.monthlyRate,
+    status: input.status.toLowerCase().replace(/\s+/g, "_"),
+    notes: input.notes,
+  };
+
+  const result = input.stallId
+    ? await db.from("stalls").update(payload).eq("id", input.stallId).select("id").single()
+    : await db.from("stalls").insert(payload).select("id").single();
+
+  if (result.error) throw result.error;
+  await logActivity(actorId, input.stallId ? "updated" : "created", "stall", result.data.id, payload);
+}
+
+export async function deleteStall(actorId: string, stallId: string) {
+  const db = requireSupabase();
+  const { error } = await db.from("stalls").delete().eq("id", stallId);
+  if (error) throw error;
+  await logActivity(actorId, "deleted", "stall", stallId);
+}
+
+export async function fetchAssignments(): Promise<AdminAssignmentRecord[]> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const [leasesResult, applicationsResult] = await Promise.all([
+    db.from("leases").select("id, vendor_id, stall_id, start_date, end_date, status, created_by").order("start_date", { ascending: false }),
+    db.from("applications").select("id, vendor_id, preferred_stall_id, status"),
+  ]);
+
+  if (leasesResult.error) throw leasesResult.error;
+  if (applicationsResult.error) throw applicationsResult.error;
+
+  const applications = applicationsResult.data ?? [];
+
+  return (leasesResult.data ?? []).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    const creator = item.created_by ? core.profileById.get(item.created_by) : null;
+    const relatedApplication = applications.find(
+      (application) => application.vendor_id === item.vendor_id && application.preferred_stall_id === item.stall_id,
+    );
+
+    return {
+      leaseId: item.id,
+      vendorId: item.vendor_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendor: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      stallId: item.stall_id,
+      stall: core.stallById.get(item.stall_id)?.label ?? "Unassigned",
+      startDate: formatDate(item.start_date),
+      endDate: formatDate(item.end_date),
+      status: titleizeStatus(relatedApplication?.status ?? item.status),
+      encodedBy: creator?.full_name ?? "System",
+    };
+  });
+}
+
+export async function createAssignment(
+  actorId: string,
+  input: {
+    applicationId: string;
+    stallId: string;
+    startDate: string;
+    endDate: string;
+    monthlyRate: number;
+  },
+) {
+  const db = requireSupabase();
+  const { data: application, error: applicationError } = await db
+    .from("applications")
+    .select("id, vendor_id")
+    .eq("id", input.applicationId)
+    .single();
+
+  if (applicationError) throw applicationError;
+
+  const { data: lease, error: leaseError } = await db
+    .from("leases")
+    .insert({
+      vendor_id: application.vendor_id,
+      stall_id: input.stallId,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      monthly_rate: input.monthlyRate,
+      status: "active",
+      renewal_status: "not_due",
+      created_by: actorId,
+    })
+    .select("id")
+    .single();
+
+  if (leaseError) throw leaseError;
+
+  const { error: applicationUpdateError } = await db
+    .from("applications")
+    .update({
+      status: "assigned",
+      preferred_stall_id: input.stallId,
+      reviewed_by: actorId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", input.applicationId);
+
+  if (applicationUpdateError) throw applicationUpdateError;
+
+  const { error: stallError } = await db
+    .from("stalls")
+    .update({ status: "occupied" })
+    .eq("id", input.stallId);
+
+  if (stallError) throw stallError;
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", application.vendor_id)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Stall assigned",
+    "Your application has been assigned to a market stall.",
+    "assigned",
+    "/vendor/stall",
+  );
+
+  await logActivity(actorId, "assigned", "lease", lease.id, {
+    applicationId: input.applicationId,
+    stallId: input.stallId,
+  });
+}
+
+export async function fetchLeases(): Promise<{
+  summary: [string, string][];
+  rows: AdminLeaseRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("leases")
+    .select("id, vendor_id, stall_id, monthly_rate, renewal_status, end_date, status")
+    .order("end_date", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    return {
+      id: item.id,
+      vendorId: item.vendor_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendor: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      stallId: item.stall_id,
+      stall: core.stallById.get(item.stall_id)?.label ?? "Unassigned",
+      monthlyRate: Number(item.monthly_rate ?? 0),
+      renewalStatus: titleizeStatus(item.renewal_status),
+      leaseEnd: formatDate(item.end_date),
+      leaseEndIso: item.end_date,
+      status: titleizeStatus(item.status),
+    };
+  });
+
+  return {
+    summary: [
+      ["Active leases", `${rows.filter((item) => item.status === "Active").length}`],
+      ["Expiring soon", `${rows.filter((item) => item.status === "Active").length}`],
+      ["Renewal reminders", `${rows.filter((item) => item.renewalStatus === "In Progress").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function updateLease(
+  actorId: string,
+  input: {
+    leaseId: string;
+    endDate: string;
+    monthlyRate: number;
+    status: string;
+    renewalStatus: string;
+  },
+) {
+  const db = requireSupabase();
+  const nextStatus = input.status.toLowerCase().replace(/\s+/g, "_");
+  const nextRenewalStatus = input.renewalStatus.toLowerCase().replace(/\s+/g, "_");
+  const { data: lease, error: leaseError } = await db
+    .from("leases")
+    .update({
+      end_date: input.endDate,
+      monthly_rate: input.monthlyRate,
+      status: nextStatus,
+      renewal_status: nextRenewalStatus,
+    })
+    .eq("id", input.leaseId)
+    .select("stall_id, vendor_id")
+    .single();
+
+  if (leaseError) throw leaseError;
+
+  if (nextStatus === "terminated" || nextStatus === "expired") {
+    const { error: stallError } = await db.from("stalls").update({ status: "available" }).eq("id", lease.stall_id);
+    if (stallError) throw stallError;
+  }
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", lease.vendor_id)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Lease updated",
+    `Your lease status is now ${titleizeStatus(nextStatus)}.`,
+    nextStatus,
+    "/vendor/stall",
+  );
+
+  await logActivity(actorId, "updated", "lease", input.leaseId, {
+    status: nextStatus,
+    renewalStatus: nextRenewalStatus,
+  });
+}
+
+export async function fetchBillings(): Promise<{
+  summary: [string, string][];
+  rows: AdminBillingRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("billings")
+    .select("id, lease_id, billing_month, amount_due, due_date, amount_paid, status, penalties, notes")
+    .order("billing_month", { ascending: false });
+
+  if (error) throw error;
+
+  const { data: leases, error: leasesError } = await db.from("leases").select("id, vendor_id, stall_id");
+  if (leasesError) throw leasesError;
+  const leaseById = new Map((leases ?? []).map((item) => [item.id, item]));
+
+  const rows = (data ?? []).map((item) => {
+    const lease = leaseById.get(item.lease_id);
+    const vendor = lease ? core.vendorById.get(lease.vendor_id) : null;
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+
+    return {
+      id: item.id,
+      leaseId: item.lease_id,
+      vendorId: lease?.vendor_id ?? "",
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendor: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      stall: lease?.stall_id ? core.stallById.get(lease.stall_id)?.label ?? "-" : "-",
+      billingMonth: formatDate(item.billing_month),
+      billingMonthIso: item.billing_month,
+      amountDue: Number(item.amount_due ?? 0),
+      dueDate: formatDate(item.due_date),
+      dueDateIso: item.due_date,
+      amountPaid: Number(item.amount_paid ?? 0),
+      status: titleizeStatus(item.status),
+      penalties: Number(item.penalties ?? 0),
+      notes: item.notes ?? "",
+    };
+  });
+
+  const outstanding = rows.reduce((sum, item) => sum + Math.max(item.amountDue - item.amountPaid, 0), 0);
+
+  return {
+    summary: [
+      ["Outstanding", formatCurrency(outstanding)],
+      ["Partial", `${rows.filter((item) => item.status === "Partial").length} accounts`],
+      ["Paid this month", formatCurrency(rows.reduce((sum, item) => sum + item.amountPaid, 0))],
+    ],
+    rows,
+  };
+}
+
+export async function createBilling(
+  actorId: string,
+  input: {
+    leaseId: string;
+    billingMonth: string;
+    amountDue: number;
+    dueDate: string;
+    penalties: number;
+    notes: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data, error } = await db
+    .from("billings")
+    .insert({
+      lease_id: input.leaseId,
+      billing_month: input.billingMonth,
+      amount_due: input.amountDue,
+      due_date: input.dueDate,
+      penalties: input.penalties,
+      notes: input.notes,
+      status: "unpaid",
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  await logActivity(actorId, "created", "billing", data.id, input);
+}
+
+export async function updateBilling(
+  actorId: string,
+  input: {
+    billingId: string;
+    billingMonth: string;
+    amountDue: number;
+    dueDate: string;
+    penalties: number;
+    notes: string;
+  },
+) {
+  const db = requireSupabase();
+  const { error } = await db
+    .from("billings")
+    .update({
+      billing_month: input.billingMonth,
+      amount_due: input.amountDue,
+      due_date: input.dueDate,
+      penalties: input.penalties,
+      notes: input.notes,
+    })
+    .eq("id", input.billingId);
+
+  if (error) throw error;
+  await logActivity(actorId, "updated", "billing", input.billingId, input);
+}
+
+export async function fetchPayments(): Promise<{
+  summary: [string, string][];
+  rows: AdminPaymentRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("payments")
+    .select("id, billing_id, vendor_id, amount, payment_date, payment_method, receipt_number, recorded_by, notes")
+    .order("payment_date", { ascending: false });
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    const recorder = item.recorded_by ? core.profileById.get(item.recorded_by) : null;
+    return {
+      id: item.id,
+      billingId: item.billing_id,
+      vendorId: item.vendor_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendor: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      amount: Number(item.amount ?? 0),
+      paymentDate: formatDate(item.payment_date),
+      paymentDateIso: item.payment_date,
+      method: item.payment_method,
+      receipt: item.receipt_number ?? "-",
+      recordedBy: recorder?.full_name ?? "Vendor Portal",
+      notes: item.notes ?? "",
+    };
+  });
+
+  return {
+    summary: [
+      ["Verified entries", `${rows.length}`],
+      ["Cash", `${rows.filter((item) => item.method.toLowerCase() === "cash").length}`],
+      ["Digital", `${rows.filter((item) => item.method.toLowerCase() !== "cash").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function createPayment(
+  actorId: string,
+  input: {
+    billingId: string;
+    amount: number;
+    paymentDate: string;
+    method: string;
+    receiptNumber: string;
+    notes: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data: billing, error: billingError } = await db
+    .from("billings")
+    .select("id, lease_id")
+    .eq("id", input.billingId)
+    .single();
+
+  if (billingError) throw billingError;
+
+  const { data: lease, error: leaseError } = await db
+    .from("leases")
+    .select("vendor_id")
+    .eq("id", billing.lease_id)
+    .single();
+
+  if (leaseError) throw leaseError;
+
+  const { data, error } = await db
+    .from("payments")
+    .insert({
+      billing_id: input.billingId,
+      vendor_id: lease.vendor_id,
+      amount: input.amount,
+      payment_date: input.paymentDate,
+      payment_method: input.method,
+      receipt_number: input.receiptNumber || null,
+      recorded_by: actorId,
+      notes: input.notes,
+      submitted_by_vendor: false,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+
+  const { data: vendor, error: vendorError } = await db
+    .from("vendors")
+    .select("profile_id")
+    .eq("id", lease.vendor_id)
+    .single();
+
+  if (vendorError) throw vendorError;
+
+  await notifyUser(
+    vendor.profile_id,
+    "Payment recorded",
+    `A payment of ${formatCurrency(input.amount)} was posted to your account.`,
+    "paid",
+    "/vendor/billing",
+  );
+
+  await logActivity(actorId, "recorded", "payment", data.id, {
+    billingId: input.billingId,
+    amount: input.amount,
+  });
+}
+
+export async function fetchViolations(): Promise<{
+  summary: [string, string][];
+  rows: AdminViolationRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("violations")
+    .select("id, vendor_id, stall_id, category, description, violation_date, penalty_amount, status, action_taken")
+    .order("violation_date", { ascending: false });
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((item) => {
+    const vendor = core.vendorById.get(item.vendor_id);
+    const profile = vendor ? core.profileById.get(vendor.profile_id) : null;
+    return {
+      id: item.id,
+      vendorId: item.vendor_id,
+      vendorProfileId: vendor?.profile_id ?? "",
+      vendor: vendor?.business_name ?? profile?.full_name ?? "Unknown vendor",
+      stallId: item.stall_id ?? undefined,
+      stall: item.stall_id ? core.stallById.get(item.stall_id)?.label ?? "-" : "-",
+      category: item.category,
+      description: item.description,
+      date: formatDate(item.violation_date),
+      dateIso: item.violation_date,
+      penalty: Number(item.penalty_amount ?? 0),
+      action: item.action_taken ?? "",
+      status: titleizeStatus(item.status),
+    };
+  });
+
+  return {
+    summary: [
+      ["Open cases", `${rows.filter((item) => item.status === "Open").length}`],
+      ["Penalty amount", formatCurrency(rows.reduce((sum, item) => sum + item.penalty, 0))],
+      ["Repeat vendors", `${new Set(rows.map((item) => item.vendorId)).size}`],
+    ],
+    rows,
+  };
+}
+
+export async function saveViolation(
+  actorId: string,
+  input: {
+    violationId?: string;
+    vendorId: string;
+    stallId?: string;
+    category: string;
+    description: string;
+    violationDate: string;
+    penaltyAmount: number;
+    actionTaken: string;
+    status: string;
+  },
+) {
+  const db = requireSupabase();
+  const payload = {
+    vendor_id: input.vendorId,
+    stall_id: input.stallId || null,
+    category: input.category,
+    description: input.description,
+    violation_date: input.violationDate,
+    penalty_amount: input.penaltyAmount,
+    action_taken: input.actionTaken,
+    status: input.status.toLowerCase().replace(/\s+/g, "_"),
+    recorded_by: actorId,
+  };
+
+  const result = input.violationId
+    ? await db.from("violations").update(payload).eq("id", input.violationId).select("id").single()
+    : await db.from("violations").insert(payload).select("id").single();
+
+  if (result.error) throw result.error;
+  await logActivity(actorId, input.violationId ? "updated" : "created", "violation", result.data.id, payload);
+}
+
+export async function deleteViolation(actorId: string, violationId: string) {
+  const db = requireSupabase();
+  const { error } = await db.from("violations").delete().eq("id", violationId);
+  if (error) throw error;
+  await logActivity(actorId, "deleted", "violation", violationId);
+}
+
+export async function fetchNotifications(): Promise<AdminNotificationRecord[]> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("notifications")
+    .select("id, user_id, title, message, type, is_read, link, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((item) => {
+    const profile = core.profileById.get(item.user_id);
+    return {
+      id: item.id,
+      userId: item.user_id,
+      recipient: profile ? `${profile.full_name} (${profile.email})` : "Unknown user",
+      title: item.title,
+      message: item.message,
+      type: titleizeStatus(item.type),
+      isRead: item.is_read,
+      link: item.link ?? "",
+      createdAt: formatDateTime(item.created_at),
+      createdAtIso: item.created_at,
+    };
+  });
+}
+
+export async function createAdminNotification(
+  actorId: string,
+  input: {
+    userId: string;
+    title: string;
+    message: string;
+    type: string;
+    link: string;
+  },
+) {
+  const db = requireSupabase();
+  const { data, error } = await db
+    .from("notifications")
+    .insert({
+      user_id: input.userId,
+      title: input.title,
+      message: input.message,
+      type: input.type.toLowerCase().replace(/\s+/g, "_"),
+      link: input.link,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  await logActivity(actorId, "created", "notification", data.id, input);
+}
+
+export async function toggleAdminNotificationRead(notificationId: string, isRead: boolean) {
+  const db = requireSupabase();
+  const { error } = await db.from("notifications").update({ is_read: isRead }).eq("id", notificationId);
+  if (error) throw error;
+}
+
+export async function deleteAdminNotification(notificationId: string) {
+  const db = requireSupabase();
+  const { error } = await db.from("notifications").delete().eq("id", notificationId);
+  if (error) throw error;
+}
+
+export async function fetchStaff(): Promise<{
+  summary: [string, string][];
+  rows: AdminStaffRecord[];
+}> {
+  const db = requireSupabase();
+  const core = await loadCoreMaps();
+  const { data, error } = await db
+    .from("staff")
+    .select("id, profile_id, position_title, is_active")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((item) => {
+    const profile = core.profileById.get(item.profile_id);
+    return {
+      id: item.id,
+      profileId: item.profile_id,
+      name: profile?.full_name ?? "Unknown staff",
+      role: titleizeStatus(profile?.role ?? "admin"),
+      email: profile?.email ?? "-",
+      positionTitle: item.position_title ?? "",
+      isActive: item.is_active,
+    };
+  });
+
+  return {
+    summary: [
+      ["Enabled accounts", `${rows.filter((item) => item.isActive).length}`],
+      ["Super admins", `${rows.filter((item) => item.role === "Super Admin").length}`],
+      ["Finance users", `${rows.filter((item) => item.role === "Finance").length}`],
+    ],
+    rows,
+  };
+}
+
+export async function updateStaffRecord(
+  actorId: string,
+  input: {
+    staffId: string;
+    profileId: string;
+    role: string;
+    positionTitle: string;
+    isActive: boolean;
+  },
+) {
+  const db = requireSupabase();
+  const { error: profileError } = await db
+    .from("profiles")
+    .update({ role: input.role.toLowerCase().replace(/\s+/g, "_") })
+    .eq("id", input.profileId);
+
+  if (profileError) throw profileError;
+
+  const { error: staffError } = await db
+    .from("staff")
+    .update({ position_title: input.positionTitle, is_active: input.isActive })
+    .eq("id", input.staffId);
+
+  if (staffError) throw staffError;
+  await logActivity(actorId, "updated", "staff", input.staffId, input);
+}
+
+export async function fetchSettings(): Promise<AdminSettingsSnapshot> {
+  const db = requireSupabase();
+  const [requirementsResult, settingsResult] = await Promise.all([
+    db.from("document_requirements").select("id, code, name, description, is_required, has_expiry, sort_order").order("sort_order", { ascending: true }),
+    db.from("system_settings").select("key, value"),
+  ]);
+
+  if (requirementsResult.error) throw requirementsResult.error;
+  if (settingsResult.error) throw settingsResult.error;
+
+  const settingsMap = new Map((settingsResult.data ?? []).map((item) => [item.key, item.value as Record<string, unknown>]));
+  const billingSettings = settingsMap.get("billing_schedule") ?? {};
+  const notificationTemplates = settingsMap.get("notification_templates") ?? {};
+
+  return {
+    documentRequirements: (requirementsResult.data ?? []).map((item) => ({
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      description: item.description ?? "",
+      isRequired: item.is_required,
+      hasExpiry: item.has_expiry,
+      sortOrder: item.sort_order,
+    })),
+    billingSettings: {
+      billingDay: Number(billingSettings.billingDay ?? 5),
+      penaltyAmount: Number(billingSettings.penaltyAmount ?? 150),
+      reminderDaysBefore: Number(billingSettings.reminderDaysBefore ?? 3),
+    },
+    notificationTemplates: {
+      approval: String(notificationTemplates.approval ?? "Your application has been approved."),
+      rejection: String(notificationTemplates.rejection ?? "Your application requires attention."),
+      overdue: String(notificationTemplates.overdue ?? "Your billing account has passed the due date."),
+    },
+  };
+}
+
+export async function saveDocumentRequirement(
+  actorId: string,
+  input: {
+    id: string;
+    name: string;
+    description: string;
+    isRequired: boolean;
+    hasExpiry: boolean;
+    sortOrder: number;
+  },
+) {
+  const db = requireSupabase();
+  const { error } = await db
+    .from("document_requirements")
+    .update({
+      name: input.name,
+      description: input.description,
+      is_required: input.isRequired,
+      has_expiry: input.hasExpiry,
+      sort_order: input.sortOrder,
+    })
+    .eq("id", input.id);
+
+  if (error) throw error;
+  await logActivity(actorId, "updated", "document_requirement", input.id, input);
+}
+
+export async function saveSystemSetting(
+  actorId: string,
+  key: string,
+  value: Record<string, unknown>,
+) {
+  const db = requireSupabase();
+  const { error } = await db
+    .from("system_settings")
+    .upsert({ key, value, updated_by: actorId, updated_at: new Date().toISOString() });
+
+  if (error) throw error;
+  await logActivity(actorId, "updated", "system_setting", key, value);
+}
+
+export async function fetchReports(filters: ReportFiltersInput): Promise<AdminReportsSnapshot> {
+  const [billings, leases, stalls] = await Promise.all([fetchBillings(), fetchLeases(), fetchStalls()]);
+
+  const filteredBillings = billings.rows.filter((item) => {
+    const inStatus = filters.paymentStatus === "Any status" || item.status === filters.paymentStatus;
+    return inStatus;
+  });
+
+  const filteredStalls = stalls.rows.filter((item) => {
+    return filters.section === "All sections" || item.section === filters.section;
+  });
+
+  const expiringLeases = leases.rows.filter((item) => {
+    return item.status === "Active";
+  });
+
+  return {
+    summary: [
+      {
+        label: "Occupancy Report",
+        value: `${filteredStalls.filter((item) => item.status === "Occupied").length}/${filteredStalls.length || 0}`,
+        note: `Filtered by ${filters.section}`,
+      },
+      {
+        label: "Overdue Balances",
+        value: formatCurrency(
+          filteredBillings
+            .filter((item) => item.status === "Overdue")
+            .reduce((sum, item) => sum + Math.max(item.amountDue - item.amountPaid, 0), 0),
+        ),
+        note: `Filtered by ${filters.paymentStatus}`,
+      },
+      {
+        label: "Expiring Contracts",
+        value: `${expiringLeases.length}`,
+        note: `As of ${formatDate(todayIso())}`,
+      },
+    ],
+    rows: [
+      {
+        report: "Stall Occupancy",
+        filter_scope: filters.section,
+        generated_at: formatDateTime(new Date().toISOString()),
+        coverage: `${filteredStalls.length} stalls`,
+        status: "Ready",
+      },
+      {
+        report: "Payment Collection",
+        filter_scope: filters.paymentStatus,
+        generated_at: formatDateTime(new Date().toISOString()),
+        coverage: `${filteredBillings.length} billing rows`,
+        status: "Ready",
+      },
+      {
+        report: "Lease Expiry",
+        filter_scope: `${filters.dateFrom} to ${filters.dateTo}`,
+        generated_at: formatDateTime(new Date().toISOString()),
+        coverage: `${expiringLeases.length} leases`,
+        status: "Ready",
+      },
+    ],
+  };
+}
