@@ -322,13 +322,18 @@ export function AdminApplicationsPage() {
   const { user } = useAuth();
   const { data, isPending, error } = useQuery({ queryKey: queryKeys.applications, queryFn: fetchApplications, enabled: isSupabaseConfigured });
   const { data: vendorOptions = [] } = useQuery({ queryKey: queryKeys.vendorOptions, queryFn: fetchVendorOptions, enabled: isSupabaseConfigured });
-  const [modal, setModal] = useState<"review" | "walk-in" | null>(null);
+  const [modal, setModal] = useState<"review" | "details" | "walk-in" | null>(null);
   const [reviewId, setReviewId] = useState("");
   const [remarks, setRemarks] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [walkIn, setWalkIn] = useState({ vendorId: "", businessType: "", preferredSection: "Dry Goods", preferredStallType: "General Merchandise", remarks: "" });
 
   const selected = data?.rows.find((r) => r.id === reviewId);
+  const { data: applicationDocuments = [], isPending: isDocumentsPending, error: documentsError } = useQuery({
+    queryKey: queryKeys.applicationDocuments(reviewId),
+    queryFn: () => fetchApplicationDocuments(reviewId),
+    enabled: isSupabaseConfigured && (modal === "review" || modal === "details") && Boolean(reviewId),
+  });
 
   const openReview = (id: string) => {
     const app = data?.rows.find((r) => r.id === id);
@@ -339,6 +344,13 @@ export function AdminApplicationsPage() {
     setModal("review");
   };
 
+  const openDetails = (id: string) => {
+    const app = data?.rows.find((r) => r.id === id);
+    if (!app) return;
+    setReviewId(id);
+    setModal("details");
+  };
+
   const review = useMutation({
     mutationFn: async (status: "under_review" | "approved" | "needs_resubmission" | "rejected") =>
       updateApplicationReview(user!.id, { applicationId: reviewId, status, remarks, rejectionReason }),
@@ -346,6 +358,19 @@ export function AdminApplicationsPage() {
       await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.applications }), queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })]);
       toast.success("Application review updated.");
       setModal(null);
+    },
+    onError: (e) => toast.error(String(e)),
+  });
+
+  const verifyDocument = useMutation({
+    mutationFn: async (input: { documentId: string; status: "verified" | "needs_resubmission" | "rejected" | "pending"; remarks: string }) =>
+      updateDocumentVerification(user!.id, input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.applicationDocuments(reviewId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.applications }),
+      ]);
+      toast.success("Document verification updated.");
     },
     onError: (e) => toast.error(String(e)),
   });
@@ -388,9 +413,14 @@ export function AdminApplicationsPage() {
                 <Td><StatusBadge status={item.status} /></Td>
                 <Td className="text-muted-foreground">{item.updatedAt}</Td>
                 <Td>
-                  <Button onClick={() => openReview(item.id)} size="sm" variant="outline">
-                    <PencilLine className="mr-2 h-3 w-3" />Review
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={() => openDetails(item.id)} size="sm" variant="outline">
+                      View
+                    </Button>
+                    <Button onClick={() => openReview(item.id)} size="sm" variant="outline">
+                      <PencilLine className="mr-2 h-3 w-3" />Review
+                    </Button>
+                  </div>
                 </Td>
               </Tr>
             ))}
@@ -398,14 +428,167 @@ export function AdminApplicationsPage() {
         </>
       ) : null}
 
+      {modal === "details" && selected ? (
+        <Modal onClose={() => setModal(null)} size="lg" title={`Application details: ${selected.vendorName}`}>
+          <div className="grid gap-3 md:grid-cols-2 text-sm">
+            <InfoItem label="Submitted" value={selected.submittedAt} />
+            <InfoItem label="Last updated" value={selected.updatedAt} />
+            <InfoItem label="Business type" value={selected.businessType} />
+            <InfoItem label="Preferred section" value={selected.preferredSection} />
+            <InfoItem label="Preferred stall type" value={selected.preferredStallType} />
+            <InfoItem label="Preferred stall" value={selected.preferredStallLabel} />
+            <InfoItem label="Status" value={selected.status} />
+            <InfoItem label="Documents" value={`${selected.documentsVerified} / ${selected.documentsUploaded} verified`} />
+          </div>
+          <Field label="Application note">
+            <p className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+              {selected.remarks || "No application note provided."}
+            </p>
+          </Field>
+          <Field label="Rejection / resubmission note">
+            <p className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+              {selected.rejectionReason || "No rejection or resubmission note."}
+            </p>
+          </Field>
+          <Field label="Application documents">
+            {isDocumentsPending ? (
+              <p className="text-sm text-muted-foreground">Loading application documents...</p>
+            ) : documentsError ? (
+              <p className="text-sm text-destructive">{String(documentsError)}</p>
+            ) : applicationDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No documents uploaded for this application yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {applicationDocuments.map((document) => (
+                  <div className="rounded-2xl border border-border/70 bg-background/70 p-4" key={document.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">{document.document}</p>
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Uploaded {document.uploadedAt} · Expiry {document.expiry}
+                        </p>
+                      </div>
+                      <StatusBadge status={document.status} />
+                    </div>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {document.remarks || "No remarks provided."}
+                    </p>
+                    {document.fileUrl ? (
+                      <div className="mt-3">
+                        <Button
+                          onClick={() => window.open(document.fileUrl, "_blank", "noopener,noreferrer")}
+                          size="sm"
+                          variant="outline"
+                        >
+                          View file
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Field>
+          <ModalFooter>
+            <Button onClick={() => setModal(null)} variant="ghost">Close</Button>
+          </ModalFooter>
+        </Modal>
+      ) : null}
+
       {modal === "review" && selected ? (
         <Modal onClose={() => setModal(null)} size="lg" title={`Review: ${selected.vendorName}`}>
           <div className="grid gap-3 md:grid-cols-2 text-sm">
             <InfoItem label="Submitted" value={selected.submittedAt} />
             <InfoItem label="Last updated" value={selected.updatedAt} />
+            <InfoItem label="Business type" value={selected.businessType} />
+            <InfoItem label="Preferred section" value={selected.preferredSection} />
+            <InfoItem label="Preferred stall type" value={selected.preferredStallType} />
             <InfoItem label="Preferred stall" value={selected.preferredStallLabel} />
             <InfoItem label="Documents" value={`${selected.documentsVerified} / ${selected.documentsUploaded} verified`} />
           </div>
+          <Field label="Application note">
+            <p className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+              {selected.remarks || "No application note provided."}
+            </p>
+          </Field>
+          <Field label="Application documents">
+            {isDocumentsPending ? (
+              <p className="text-sm text-muted-foreground">Loading application documents...</p>
+            ) : documentsError ? (
+              <p className="text-sm text-destructive">{String(documentsError)}</p>
+            ) : applicationDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No documents uploaded for this application yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {applicationDocuments.map((document) => (
+                  <div className="rounded-2xl border border-border/70 bg-background/70 p-4" key={document.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">{document.document}</p>
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Uploaded {document.uploadedAt} · Expiry {document.expiry}
+                        </p>
+                      </div>
+                      <StatusBadge status={document.status} />
+                    </div>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {document.remarks || "No remarks provided."}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {document.fileUrl ? (
+                        <Button
+                          onClick={() => window.open(document.fileUrl, "_blank", "noopener,noreferrer")}
+                          size="sm"
+                          variant="outline"
+                        >
+                          View file
+                        </Button>
+                      ) : null}
+                      <Button
+                        disabled={verifyDocument.isPending}
+                        onClick={() =>
+                          verifyDocument.mutate({
+                            documentId: document.id,
+                            status: "verified",
+                            remarks: document.remarks,
+                          })}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Verify
+                      </Button>
+                      <Button
+                        disabled={verifyDocument.isPending}
+                        onClick={() =>
+                          verifyDocument.mutate({
+                            documentId: document.id,
+                            status: "needs_resubmission",
+                            remarks: document.remarks,
+                          })}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        Needs resubmission
+                      </Button>
+                      <Button
+                        disabled={verifyDocument.isPending}
+                        onClick={() =>
+                          verifyDocument.mutate({
+                            documentId: document.id,
+                            status: "rejected",
+                            remarks: document.remarks,
+                          })}
+                        size="sm"
+                        variant="destructive"
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Field>
           <Field label="Remarks">
             <Textarea onChange={(e) => setRemarks(e.target.value)} rows={3} value={remarks} />
           </Field>
@@ -1604,6 +1787,3 @@ function formatCurrency(value: number) {
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
-
-
-
