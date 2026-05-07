@@ -51,6 +51,8 @@ export interface AdminDocumentRecord {
   status: string;
   remarks: string;
   uploadedAt: string;
+  fileUrl?: string;
+  fileName?: string;
 }
 
 export interface AdminStallRecord {
@@ -706,6 +708,56 @@ export async function fetchApplications(): Promise<{
     ],
     rows,
   };
+}
+
+export async function fetchApplicationDocuments(applicationId: string): Promise<AdminDocumentRecord[]> {
+  const db = requireSupabase();
+  const [documentsResult, requirementsResult] = await Promise.all([
+    db
+      .from("application_documents")
+      .select("id, application_id, requirement_id, verification_status, remarks, expiry_date, created_at, file_url, file_name")
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: true }),
+    db.from("document_requirements").select("id, name"),
+  ]);
+
+  if (documentsResult.error) throw documentsResult.error;
+  if (requirementsResult.error) throw requirementsResult.error;
+
+  const requirementById = new Map((requirementsResult.data ?? []).map((item) => [item.id, item.name]));
+
+  // Generate signed URLs for documents with real storage paths
+  const storagePaths = (documentsResult.data ?? [])
+    .map((d) => d.file_url)
+    .filter((url): url is string => Boolean(url) && !url.startsWith("uploaded-via"));
+
+  const signedUrlMap = new Map<string, string>();
+  if (storagePaths.length > 0) {
+    try {
+      const { data: signedData } = await db.storage
+        .from("vendor-documents")
+        .createSignedUrls(storagePaths, 3600);
+      (signedData ?? []).forEach((item) => {
+        if (item.signedUrl && item.path) signedUrlMap.set(item.path, item.signedUrl);
+      });
+    } catch {
+      // bucket not provisioned yet — degrade gracefully
+    }
+  }
+
+  return (documentsResult.data ?? []).map((item) => ({
+    id: item.id,
+    applicationId: item.application_id,
+    vendorProfileId: "",
+    vendorName: "",
+    document: requirementById.get(item.requirement_id) ?? item.file_name ?? "Document",
+    expiry: formatDate(item.expiry_date),
+    status: titleizeStatus(item.verification_status),
+    remarks: item.remarks ?? "",
+    uploadedAt: formatDateTime(item.created_at),
+    fileUrl: item.file_url ? (signedUrlMap.get(item.file_url) ?? undefined) : undefined,
+    fileName: item.file_name ?? undefined,
+  }));
 }
 
 export async function createWalkInApplication(
